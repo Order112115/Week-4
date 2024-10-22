@@ -7,9 +7,8 @@
 #include <chrono>
 #include <algorithm>
 #include "RasterSurface.h"
-#include "StoneHenge.h" 
-#include "StoneHenge_Texture.h"  
-
+#include "StoneHenge.h"  // Assuming this contains vertex data
+#include "StoneHenge_Texture.h"  // Assuming this contains texture data
 
 const int WIDTH = 500;
 const int HEIGHT = 600;
@@ -36,16 +35,23 @@ struct Vector3 {
         return Vector3(x + other.x, y + other.y, z + other.z);
     }
 
+    Vector3 operator/(float scalar) const {
+        if (scalar == 0) {
+            throw std::runtime_error("Division by zero in Vector3 division.");
+        }
+        return Vector3(x / scalar, y / scalar, z / scalar);
+    }
+
     Vector3 operator*(float scalar) const {
         return Vector3(x * scalar, y * scalar, z * scalar);
     }
 
-
+    // Overload for multiplying a scalar float by a Vector3 (commutative)
     friend Vector3 operator*(float scalar, const Vector3& vec) {
         return Vector3(vec.x * scalar, vec.y * scalar, vec.z * scalar);
     }
 
-   
+    // Overload for multiplying a Vector3 by another Vector3 (element-wise)
     Vector3 operator*(const Vector3& vec) const {
         return Vector3(x * vec.x, y * vec.y, z * vec.z);
     }
@@ -196,12 +202,10 @@ unsigned int sampleTexture(float u, float v) {
     int texX = static_cast<int>(u * (texture_width - 1));
     int texY = static_cast<int>(v * (texture_height - 1));
 
+
     int index = Convert2Dto1D(texX, texY, texture_width);
-
     unsigned int bgra = texture[index];
-
     unsigned int argb = SwapBGRAtoARGB(bgra);
-
     argb = (0xFF << 24) | (argb & 0x00FFFFFF);
 
     return argb;
@@ -261,7 +265,33 @@ bool isBackface(const Vertex& v0, const Vertex& v1, const Vertex& v2) {
     return normalZ > 0;
 }
 
-void drawFilledTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, uint32_t color) {
+
+struct Material {
+    Vector3 ambient; // Ambient reflectivity
+    Vector3 diffuse; // Diffuse reflectivity
+    Vector3 specular; // Specular reflectivity
+    float shininess; // Shininess factor
+};
+
+Material material = {
+    Vector3(0.2f, 0.2f, 0.2f), // Ambient reflectivity (increased for better visibility)
+    Vector3(0.8f, 0.8f, 0.8f), // Diffuse reflectivity (kept the same)
+    Vector3(1.0f, 1.0f, 1.0f), // Specular reflectivity (kept the same)
+    32.0f // Shininess factor (increased for sharper highlights)
+};
+
+struct DirectionalLight {
+    Vector3 direction; // Direction of the light (normalized)
+    float intensity;   // Intensity of the light
+    Vector3 color;     // Color of the light (RGB)
+};
+
+// Create a directional light instance
+
+DirectionalLight light;
+const float AMBIENT_LIGHT_INTENSITY = 10.0f; // Adjust this value for desired ambient light level
+
+void drawFilledTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, const DirectionalLight& light) {
     float minX = std::min({ v0.x, v1.x, v2.x });
     float maxX = std::max({ v0.x, v1.x, v2.x });
     float minY = std::min({ v0.y, v1.y, v2.y });
@@ -282,14 +312,45 @@ void drawFilledTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, ui
                     float interpU = u * v0.u + v * v1.u + w * v2.u;
                     float interpV = u * v0.v + v * v1.v + w * v2.v;
 
+                    // Sample texture color
                     unsigned int texColor = sampleTexture(interpU, interpV);
-                    drawPoint(x, y, texColor, depth);
+
+                    // Calculate normal
+                    Vector3 normal = (v1.position - v0.position).cross(v2.position - v0.position).normalize();
+
+                    // Ambient component
+                    Vector3 ambient = material.ambient * light.color * light.intensity;
+
+                    // Diffuse component
+                    float dotProduct = std::max(0.0f, normal.dot(light.direction));
+                    Vector3 diffuse = material.diffuse * light.color * light.intensity * dotProduct;
+
+                    // Specular component
+                    Vector3 viewDir = Vector3(0.0f, 0.0f, -1.0f); // Assuming the camera is looking down the -Z axis
+                    Vector3 reflectDir = (2.0f * dotProduct * normal - light.direction).normalize();
+                    float spec = pow(std::max(0.0f, reflectDir.dot(viewDir)), material.shininess);
+                    Vector3 specular = material.specular * light.color * light.intensity * spec;
+
+                    // Combine all components with texture color
+                    Vector3 finalColor = (ambient + diffuse + specular) * (Vector3((texColor >> 16) & 0xFF, (texColor >> 8) & 0xFF, texColor & 0xFF) / 255.0f);
+
+                    // Clamp color values
+                    unsigned int r = static_cast<unsigned int>(std::min(finalColor.x * 255, 255.0f));
+                    unsigned int g = static_cast<unsigned int>(std::min(finalColor.y * 255, 255.0f));
+                    unsigned int b = static_cast<unsigned int>(std::min(finalColor.z * 255, 255.0f));
+
+                    // Combine the new color
+                    unsigned int finalColorPacked = (0xFF << 24) | (r << 16) | (g << 8) | b;
+
+                    // Debugging output for final color
+                    //std::cout << "Final Color: R=" << r << " G=" << g << " B=" << b << std::endl;
+
+                    drawPoint(x, y, finalColorPacked, depth);
                 }
             }
         }
     }
 }
-
 
 Matrix4x4 buildViewMatrix() {
     Matrix4x4 rotation = rotateX(10.0f);
@@ -334,7 +395,7 @@ void drawStars(const std::vector<Vector3>& stars, const Matrix4x4& view, const M
 
         int screenX = static_cast<int>((projectedStar.x * (WIDTH / 2.0f)) + (WIDTH / 2.0f));
         int screenY = static_cast<int>((-projectedStar.y * (HEIGHT / 2.0f)) + (HEIGHT / 2.0f));
-        drawPoint(screenX, screenY, 0xFFFFFF, projectedStar.z); 
+        drawPoint(screenX, screenY, 0xFFFFFF, projectedStar.z); // White color for stars
     }
 }
 
@@ -346,7 +407,7 @@ void loadModel(const OBJ_VERT* modelVertices, int numVertices, std::vector<Verte
 }
 
 
-void drawModel(const std::vector<Vertex>& vertexBuffer, const unsigned int* indices, int numIndices, const Matrix4x4& world, const Matrix4x4& view, const Matrix4x4& projection) {
+void drawModel(const std::vector<Vertex>& vertexBuffer, const unsigned int* indices, int numIndices, const Matrix4x4& world, const Matrix4x4& view, const Matrix4x4& projection, const DirectionalLight& light){
     std::vector<Vertex> transformedVertices;
     for (const auto& v : vertexBuffer) {
         Vertex transformed = transformVertex(v, world, view, projection);
@@ -368,7 +429,7 @@ void drawModel(const std::vector<Vertex>& vertexBuffer, const unsigned int* indi
         Vertex v2 = transformedVertices[indices[i + 2]];
 
         if (!isBackface(v0, v1, v2)) {
-            drawFilledTriangle(v0, v1, v2, 0xFFFFFFFF);
+            drawFilledTriangle(v0, v1, v2, light);
         }
     }
 }
@@ -394,8 +455,14 @@ int main() {
         Matrix4x4 translationMatrix = translate(0.0f, 0.0f, 0.0f);
         Matrix4x4 worldMatrix = translationMatrix;
 
-        drawModel(vertexBuffer, StoneHenge_indicies, 2532, worldMatrix, buildViewMatrix(), perspective(90.0f, static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 20.0f));
+        // Create a directional light instance
+        DirectionalLight light;
+        light.direction = Vector3(10.0f, -1.0f, 1.0f).normalize(); // Light direction
+        light.intensity = 2.0f; // Light intensity
+        light.color = Vector3(0.2f, 0.2f, 0.5f); 
 
+        // In the main rendering loop, update the drawModel call
+        drawModel(vertexBuffer, StoneHenge_indicies, 2532, worldMatrix, buildViewMatrix(), perspective(90.0f, static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 20.0f), light);
         angle += 0.1f;
 
         if (!RS_Update((unsigned int*)raster, WIDTH * HEIGHT)) {
