@@ -469,11 +469,17 @@ int main() {
     std::vector<Vertex> vertexBuffer;
     loadModel(StoneHenge_data, 1457, vertexBuffer);
 
-    float moveSpeed = 2.1f; // Speed of movement
-    float rotateSpeed = 2.0f; // Speed of rotation
+    auto lastTime = std::chrono::high_resolution_clock::now();
+    float moveSpeed = 10.1f; // Speed of movement
+    float rotateSpeed = 30.0f; // Speed of rotation
 
     float angle = 0.0f;
     while (true) {
+
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
+        lastTime = currentTime;
+
         clearRaster();
         clearBuffers();
         updateCamera();
@@ -482,19 +488,19 @@ int main() {
             switch (ch) {
         
             case 'a': // Rotate left
-                cameraAngleY -= rotateSpeed;
+                cameraAngleY -= rotateSpeed * deltaTime;
                 std::cout << "Rotating left. Camera Angle Y: " << cameraAngleY << std::endl;
                 break;
             case 'd': // Rotate right
-                cameraAngleY += rotateSpeed;
+                cameraAngleY += rotateSpeed * deltaTime;
                 std::cout << "Rotating right. Camera Angle Y: " << cameraAngleY << std::endl;
                 break;
             case 'w': // Rotate up
-                cameraAngleX += rotateSpeed;
+                cameraAngleX += rotateSpeed * deltaTime;
                 std::cout << "Rotating up. Camera Angle X: " << cameraAngleX << std::endl;
                 break;
             case 's': // Rotate down
-                cameraAngleX -= rotateSpeed;
+                cameraAngleX -= rotateSpeed * deltaTime;
                 std::cout << "Rotating down. Camera Angle X: " << cameraAngleX << std::endl;
                 break;
             default:
@@ -509,13 +515,13 @@ int main() {
         Matrix4x4 translationMatrix = translate(0.0f, 0.0f, 0.0f);
         Matrix4x4 worldMatrix = translationMatrix * rotationMatrix;
 
-        // Create a directional light instance
+
         DirectionalLight light;
-        light.direction = Vector3(3.0f, -1.0f, -1.0f).normalize(); // Light direction
+        light.direction = Vector3(3.0f, -1.0f, -1.0f).normalize(); 
         light.intensity = 2.0f; // Light intensity
         light.color = Vector3(0.2f, 0.2f, 0.5f);
 
-        // In the main rendering loop, update the drawModel call
+        
         drawModel(vertexBuffer, StoneHenge_indicies, 2532, worldMatrix, buildViewMatrix(), perspective(50.0f, static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 20.0f), light);
         angle += 0.1f;
 
