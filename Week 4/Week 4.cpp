@@ -9,6 +9,7 @@
 #include "RasterSurface.h"
 #include "StoneHenge.h"  // Assuming this contains vertex data
 #include "StoneHenge_Texture.h"  // Assuming this contains texture data
+#include <conio.h>
 
 const int WIDTH = 500;
 const int HEIGHT = 600;
@@ -217,7 +218,7 @@ void clearBuffers() {
     for (int y = 0; y < HEIGHT; ++y) {
         for (int x = 0; x < WIDTH; ++x) {
             depthBufferArray[y][x] = std::numeric_limits<float>::infinity();
-            raster[y][x] = 0x003366FF;
+            raster[y][x] = 0x03002EFF;
         }
     }
 }
@@ -233,7 +234,7 @@ void drawPoint(int x, int y, uint32_t color, float depth) {
     if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
         if (depth < depthBufferArray[y][x]) {
             depthBufferArray[y][x] = depth;
-            raster[y][x] = color | 0xFF000000;
+            raster[y][x] = color;
         }
     }
 }
@@ -289,7 +290,7 @@ struct DirectionalLight {
 // Create a directional light instance
 
 DirectionalLight light;
-const float AMBIENT_LIGHT_INTENSITY = 10.0f; // Adjust this value for desired ambient light level
+const float AMBIENT_LIGHT_INTENSITY = 20.0f; // Adjust this value for desired ambient light level
 
 void drawFilledTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, const DirectionalLight& light) {
     float minX = std::min({ v0.x, v1.x, v2.x });
@@ -352,6 +353,12 @@ void drawFilledTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, co
     }
 }
 
+float cameraPosX = 0.0f;
+float cameraPosY = 0.0f;
+float cameraPosZ = -3.0f;
+float cameraRotationX = 10.0f;
+float cameraRotationY = 0.0f;
+
 Matrix4x4 buildViewMatrix() {
     Matrix4x4 rotation = rotateX(10.0f);
     Matrix4x4 translation = translate(0.0f, 0.5f, -3.0f);
@@ -407,7 +414,7 @@ void loadModel(const OBJ_VERT* modelVertices, int numVertices, std::vector<Verte
 }
 
 
-void drawModel(const std::vector<Vertex>& vertexBuffer, const unsigned int* indices, int numIndices, const Matrix4x4& world, const Matrix4x4& view, const Matrix4x4& projection, const DirectionalLight& light){
+void drawModel(const std::vector<Vertex>& vertexBuffer, const unsigned int* indices, int numIndices, const Matrix4x4& world, const Matrix4x4& view, const Matrix4x4& projection, const DirectionalLight& light) {
     std::vector<Vertex> transformedVertices;
     for (const auto& v : vertexBuffer) {
         Vertex transformed = transformVertex(v, world, view, projection);
@@ -433,6 +440,24 @@ void drawModel(const std::vector<Vertex>& vertexBuffer, const unsigned int* indi
         }
     }
 }
+Vector3 cameraPosition; // Global variable for camera position
+float cameraDistance = 5.0f; // Distance from the model
+float cameraAngleY = 0.0f; // Horizontal angle
+float cameraAngleX = 0.0f; // Vertical angle
+
+void updateCamera() {
+    float cameraX = cameraDistance * sin(cameraAngleY) * cos(cameraAngleX);
+    float cameraY = cameraDistance * sin(cameraAngleX);
+    float cameraZ = cameraDistance * cos(cameraAngleY) * cos(cameraAngleX);
+
+    // Update the global camera position
+    cameraPosition = Vector3(cameraX, cameraY, cameraZ);
+
+    // Call the original buildViewMatrix without arguments
+    Matrix4x4 viewMatrix = buildViewMatrix();
+}
+
+
 
 int main() {
     if (!RS_Initialize("Star Field and Model Loading", WIDTH, HEIGHT)) {
@@ -444,25 +469,54 @@ int main() {
     std::vector<Vertex> vertexBuffer;
     loadModel(StoneHenge_data, 1457, vertexBuffer);
 
+    float moveSpeed = 2.1f; // Speed of movement
+    float rotateSpeed = 2.0f; // Speed of rotation
 
     float angle = 0.0f;
     while (true) {
         clearRaster();
         clearBuffers();
+        updateCamera();
+        if (_kbhit()) {
+            char ch = _getch(); // Get the pressed key
+            switch (ch) {
+        
+            case 'a': // Rotate left
+                cameraAngleY -= rotateSpeed;
+                std::cout << "Rotating left. Camera Angle Y: " << cameraAngleY << std::endl;
+                break;
+            case 'd': // Rotate right
+                cameraAngleY += rotateSpeed;
+                std::cout << "Rotating right. Camera Angle Y: " << cameraAngleY << std::endl;
+                break;
+            case 'w': // Rotate up
+                cameraAngleX += rotateSpeed;
+                std::cout << "Rotating up. Camera Angle X: " << cameraAngleX << std::endl;
+                break;
+            case 's': // Rotate down
+                cameraAngleX -= rotateSpeed;
+                std::cout << "Rotating down. Camera Angle X: " << cameraAngleX << std::endl;
+                break;
+            default:
+                std::cout << "Key pressed: " << ch << std::endl; // Log any other key presses
+                break;
+            }
+        }
 
         drawStars(stars, buildViewMatrix(), perspective(90.0f, static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 20.0f));
 
+        Matrix4x4 rotationMatrix = rotateX(cameraAngleX) * rotateY(cameraAngleY);
         Matrix4x4 translationMatrix = translate(0.0f, 0.0f, 0.0f);
-        Matrix4x4 worldMatrix = translationMatrix;
+        Matrix4x4 worldMatrix = translationMatrix * rotationMatrix;
 
         // Create a directional light instance
         DirectionalLight light;
-        light.direction = Vector3(10.0f, -1.0f, 1.0f).normalize(); // Light direction
+        light.direction = Vector3(3.0f, -1.0f, -1.0f).normalize(); // Light direction
         light.intensity = 2.0f; // Light intensity
-        light.color = Vector3(0.2f, 0.2f, 0.5f); 
+        light.color = Vector3(0.2f, 0.2f, 0.5f);
 
         // In the main rendering loop, update the drawModel call
-        drawModel(vertexBuffer, StoneHenge_indicies, 2532, worldMatrix, buildViewMatrix(), perspective(90.0f, static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 20.0f), light);
+        drawModel(vertexBuffer, StoneHenge_indicies, 2532, worldMatrix, buildViewMatrix(), perspective(50.0f, static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 20.0f), light);
         angle += 0.1f;
 
         if (!RS_Update((unsigned int*)raster, WIDTH * HEIGHT)) {
